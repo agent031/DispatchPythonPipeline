@@ -19,7 +19,7 @@ patch_diag = lambda patch: 0.5 * (np.sum(patch.size**2))**0.5
 
 
 #__________________________________USED FOR SAVING DIRECTORIES OF DATA_____________________________#
-def serialize_directory(filename, store, directory = None, folder = 'data_for_plotting/'):
+def serialize_directory(filename, store, directory = None, folder = '/groups/astro/kxm508/codes/python_dispatch/data_for_plotting/'):
     if store and directory == None:
         print('Overwriting existing filename - please choose directory when saving data')
     elif store:
