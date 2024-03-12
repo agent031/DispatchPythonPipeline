@@ -102,14 +102,19 @@ def infall_sphere(self, shell_r=50, shell_Δpct=0.05, lon_N=360, lat_N=180, rang
 
 pipeline.infall_sphere = infall_sphere
 
-def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, phi_extent=None, quiver_dens=0.6, log_vmin=-20, log_vmax=-12, ivs=None, plot=True, get_quiver=False):
+
+################ OBS NOT WORKING WITH IVS LIST; MUST BE FIXED #################
+###############################################################################
+
+
+def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, phi_extent=None, quiver_dens=0.6, log_vmin=-20, log_vmax=-12, ivs=None, plot=True):
     radius /= self.au_length
     height /= self.au_length
     selection_radius = np.sqrt(radius ** 2 + height ** 2) * 1.2
     pp = [p for p in self.sn.patches if np.linalg.norm((p.rel_ppos), axis=0) < selection_radius]
     w = np.array([p.level for p in pp]).argsort()[::-1]
     sorted_patches = [pp[w[i]] for i in range(len(pp))]
-    extracted_values = {key: [] for key in range(7)}
+    extracted_values = {key: [] for key in range(6 + len(ivs))} if ivs is not None else {key: [] for key in range(6)}
     try:
         self.rotation_matrix
     except:
@@ -138,10 +143,12 @@ def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, ph
         R_coor = p.cyl_R[to_extract].T
         mass_val = p.m[to_extract].T
         if ivs != None:
-            if hasattr(p, ivs):
-                value = getattr(p, ivs)[to_extract].T
-            else:
-                value = p.var(ivs)[to_extract].T
+            for i, iv in enumerate(ivs):
+                if hasattr(p, iv):
+                    value = getattr(p, iv)[to_extract].T
+                else:
+                    value = p.var(iv)[to_extract].T
+                extracted_values[6 + i].extend(value)          
 
         extracted_values[0].extend(R_coor.tolist())
         extracted_values[1].extend(z_coor.tolist())
@@ -149,17 +156,17 @@ def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, ph
         extracted_values[3].extend(vel_z.tolist())
         extracted_values[4].extend(mass_val.tolist())
         extracted_values[5].extend(p.ds[0] ** 3 * np.ones(len(mass_val)))
-        if ivs != None:
-            extracted_values[6].extend(value)
-            
+
     for key in extracted_values:
         extracted_values[key] = np.array(extracted_values[key])
+
     R_grid = np.logspace(np.log10(origo_close), np.log10(radius * self.au_length), NR) / self.au_length
     R_grid = np.insert(R_grid, 0, 0)
     z_grid = np.logspace(np.log10(origo_close), np.log10(height * self.au_length), Nh_half) / self.au_length
     z_grid = np.insert(z_grid, 0, 0)
     z_grid = np.concatenate((-np.logspace(np.log10(origo_close), np.log10(height * self.au_length), Nh_half)[::-1] / self.au_length, z_grid))
     hist_mass, binedges_R, binedges_z = np.histogram2d((extracted_values[0]), (extracted_values[1]), bins=(R_grid, z_grid), weights=(extracted_values[4]))
+
     if ivs != None:
         hist_val, _, _ = np.histogram2d((extracted_values[0]), (extracted_values[1]), bins=(R_grid, z_grid), weights=(extracted_values[6] * extracted_values[4]))
         hist_val /= hist_mass
@@ -197,7 +204,7 @@ def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, ph
         fig, axs = plt.subplots(figsize=(20, 8))
         cs = axs.contourf((R_bins * self.au_length), (z_bins * self.au_length), (np.log10(interpolation.T)), vmin=log_vmin, vmax=log_vmax, origin='lower', levels=200, cmap='gist_heat')
         cbar = fig.colorbar(ScalarMappable(norm=(cs.norm), cmap=(cs.cmap)), ticks=(range(log_vmin, log_vmax + 1, 1)), ax=axs, fraction=0.1, pad=0.06, location='top')
-        quiver = axs.quiver((rr_v * self.au_length), (zz_v * self.au_length), (hist_vr / counts / arrow_length), (hist_vz / counts / arrow_length), (np.log10(arrow_length)), cmap=(mpl.cm.Greys),
+        quiver = axs.quiver((rr_v * self.au_length), (zz_v * self.au_length), (hist_vr / counts / arrow_length), (hist_vz / counts / arrow_length), (np.log10(arrow_length)), cmap=(mpl.cm.Greys_r),
             headwidth=2.5,
             headaxislength=2.3,
             headlength=2.3,
@@ -211,12 +218,14 @@ def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, ph
             axs.set_title(f"Averaged over φ: [{phi_extent[0]:1.2f},{phi_extent[1]:1.2f}] rad")
         axs.axhline(0, c='black', alpha=0.4)
         fig.tight_layout()
+
+    data = {}
+    data['r_bins'] = R_bins; data['z_bins'] = z_bins; data['d'] = interpolation; 
+    data['quiver_r_bins'] = rr_v; data['quiver_z_bins'] = zz_v; 
+    data['hist_vr'] = hist_vr / counts / arrow_length; data['hist_vz'] =  hist_vz / counts / arrow_length; data['arrow_length'] = arrow_length
     if ivs != None:
-        if get_quiver:
-            return (
-                R_bins, z_bins, interpolation_val, rr_v, zz_v, hist_vr / counts / arrow_length, hist_vz / counts / arrow_length, arrow_length)
-    if ivs != None:
-        return (R_bins, z_bins, interpolation_val)
+        data
+    return data
 
 
 pipeline.phiaverage = phi_average
