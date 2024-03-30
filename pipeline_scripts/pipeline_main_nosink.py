@@ -17,10 +17,11 @@ calc_ang = lambda vector1, vector2: np.rad2deg(np.arccos(np.dot(vector1, vector2
 patch_diag = lambda patch: 0.5 * (np.sum(patch.size**2))**0.5
 
 class pipeline_nosink():
-    def __init__(self, snap, run, sink_pos, initialize = True, data = '../data/'):
-        self.init_class(snap, run,  sink_pos=sink_pos, initialize = initialize, data = data)
+    def __init__(self, snap, run, sink_pos, initialize = True, data = '../data/', loading_bar = True):
+        self.loading_bar = loading_bar
+        self.init_class(snap, run,  sink_pos=sink_pos, initialize = initialize, loading_bar=loading_bar, data = data)
 
-    def init_class(self, snap, run, sink_pos, initialize, data = '../data/'):
+    def init_class(self, snap, run, sink_pos, initialize, loading_bar, data = '../data/'):
         self.sn = dis.snapshot(snap, run, data = data)
         self.star_pos = sink_pos #self.sn.sinks[self.sink_id][0].position
         #self.star_vel = self.sn.sinks[self.sink_id][0].velocity
@@ -29,20 +30,83 @@ class pipeline_nosink():
         self.au_length = self.sn.scaling.l / self.sn.cgs.au  # [au]
         self.cgs_density = self.sn.scaling.d                  # [g/cm^3]
         self.cms_velocity = (self.sn.scaling.l / self.sn.scaling.t) 
+        self.cgs_pressure = self.sn.scaling.e / self.sn.scaling.l**3
         #self.M_star = self.sn.sinks[self.sink_id][0].mass * self.msun_mass * M_sun
         self.time = self.sn.time * self.yr_time # [yr]
         self.cyl_calculated = False
-   
+
+        
+        
+        #_____________________________THE FOLLOWING CONSTANTS AND FUNCTIONS ARE DEFINED IN REGARDS TO THE GAS BEING POLYTROPIC___________________#
+
+        # Calculate normalization constant
+        # Polytropic exponents
+        g1 = 1.0
+        g2 = 1.1
+        g3 = 1.4
+        g4 = 1.1
+        g5 = 5.0 / 3.0
+        # upper density limits in numerical units
+        r1 = 2.5e-16 / self.cgs_density  # 7.88e4
+        r2 = 3.84e-13 / self.cgs_density # 1.21e8
+        r3 = 3.84e-8 / self.cgs_density  # 1.21e13
+        r4 = 3.84e-3 / self.cgs_density  # 1.21e18
+        # normalization constants for each segment using P = k rho^gamma
+        # needed to make the pressure continous
+        sound_speed = 1
+        k1 = sound_speed**2
+        k2 = k1 * r1**(g1 - g2)
+        k3 = k2 * r2**(g2 - g3)
+        k4 = k3 * r3**(g3 - g4)
+        k5 = k4 * r4**(g4 - g5)
+
+         # The function below is from: utilities/python/dispatch/EOS/polytrope.py
+        # 2. Equation in https://arxiv.org/pdf/2004.07523.pdf
+        def calc_gamma(rho):
+            result = np.empty_like(rho)
+            w1 = rho < r1
+            w2 = np.logical_and(rho >= r1, rho < r2)
+            w3 = np.logical_and(rho >= r2, rho < r3)
+            w4 = np.logical_and(rho >= r3, rho < r4)
+            w5 = rho >= r4
+            result[w1] = g1
+            result[w2] = g2
+            result[w3] = g3
+            result[w4] = g4
+            result[w5] = g5
+            return result
+        
+        def calc_pressure(rho):
+            P = np.empty_like(rho)
+            w1 = rho < r1
+            w2 = np.logical_and(rho >= r1, rho < r2)
+            w3 = np.logical_and(rho >= r2, rho < r3)
+            w4 = np.logical_and(rho >= r3, rho < r4)
+            w5 = rho >= r4
+            P[w1] = k1 * rho[w1]**g1
+            P[w2] = k2 * rho[w2]**g2
+            P[w3] = k3 * rho[w3]**g3
+            P[w4] = k4 * rho[w4]**g4
+            P[w5] = k5 * rho[w5]**g5
+            return P
+
         if initialize:
             print('Initialising patch data')
-            for p in tqdm.tqdm(self.sn.patches): # Should take 3s to loop over the patches like this
+            for p in tqdm.tqdm(self.sn.patches, disable = not self.loading_bar): # Should take 3s to loop over the patches like this
                 XX, YY, ZZ = np.meshgrid(p.xi, p.yi, p.zi, indexing='ij')
                 p.xyz = np.array([XX, YY, ZZ]); 
                 p.rel_ppos = p.position - self.star_pos
+                p.rel_ppos = p.position - self.star_pos
+                p.rel_ppos[p.rel_ppos < -0.5] += 1
+                p.rel_ppos[p.rel_ppos > 0.5] -= 1
                 p.rel_xyz = p.xyz - self.star_pos[:, None, None, None]
+                p.rel_xyz[p.rel_xyz < -0.5] += 1
+                p.rel_xyz[p.rel_xyz > 0.5] -= 1
                 p.dist_xyz = np.linalg.norm(p.rel_xyz, axis = 0) 
                 p.vel_xyz = np.asarray([p.var('ux'), p.var('uy'), p.var('uz')]) 
                 p.m = p.var('d') * np.prod(p.ds) 
+                p.γ = calc_gamma(p.var('d')) 
+                p.P = calc_pressure(p.var('d'))
 
     def sink_evolution(self, start = 223, end = None):
         print('Loading all snapshots - this might take awhile')

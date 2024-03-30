@@ -17,7 +17,7 @@ def to_osyris_ivs(self, variables, view = 200, dz = None, resolution = 400, view
     patch_ds = []
     patch_values = {key: [] for key in range(len(variables))}
     self.osyris_ivs = {key: [] for key in range(len(variables))}
-    for p in tqdm.tqdm(sorted_patches[:-10]):
+    for p in tqdm.tqdm(sorted_patches[:-10], disable = not self.loading_bar):
         nbors = [self.sn.patchid[i] for i in p.nbor_ids if i in self.sn.patchid]
         children = [ n for n in nbors if n.level == p.level + 1]
         leafs = [n for n in children if ((n.position - p.position)**2).sum() < ((p.size)**2).sum()/12]

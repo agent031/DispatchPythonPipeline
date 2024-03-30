@@ -18,6 +18,23 @@ calc_ang = lambda vector1, vector2: np.rad2deg(np.arccos(np.dot(vector1, vector2
 patch_diag = lambda patch: 0.5 * (np.sum(patch.size**2))**0.5
 
 
+sinks = [6, 13, 14, 25, 82, 122, 162, 180, 225]
+true_sinks = [6, 13, 13, 24, 80, 122, 161, 178, 225]
+first_sink_snap = [159, 223, 177, 213, 236, 342, 402, 404, 446]
+
+sink_positions_array = np.array([[0.175920050, -0.450297541, 0.281144660],
+                           [0.191895130, -0.435872910, 0.288312320], 
+                           [-0.441553111, -0.324398830, 0.262413070],
+                          [-0.184876630, 0.485943820, -0.436633163],
+                          [0.335228030, 0.439704800, -0.193611020],
+                          [0.218421970, 0.094505260, -0.157203590],
+                          [-0.278816220, -0.433494570, -0.477272036],
+                          [0.463706970, -0.032524150, 0.469566290],
+                          [-0.181617690, 0.249763490, 0.457740760]])
+                          
+
+sink_positions = {sink: sink_positions_array[i] for i, sink in enumerate(sinks)}
+
 #__________________________________USED FOR SAVING DIRECTORIES OF DATA_____________________________#
 def serialize_directory(filename, store, directory = None, folder = '/groups/astro/kxm508/codes/python_dispatch/data_for_plotting/'):
     if store and directory == None:
@@ -124,7 +141,11 @@ class pipeline():
                 XX, YY, ZZ = np.meshgrid(p.xi, p.yi, p.zi, indexing='ij')
                 p.xyz = np.array([XX, YY, ZZ]); 
                 p.rel_ppos = p.position - self.star_pos
+                p.rel_ppos[p.rel_ppos < -0.5] += 1
+                p.rel_ppos[p.rel_ppos > 0.5] -= 1
                 p.rel_xyz = p.xyz - self.star_pos[:, None, None, None]
+                p.rel_xyz[p.rel_xyz < -0.5] += 1
+                p.rel_xyz[p.rel_xyz > 0.5] -= 1
                 p.dist_xyz = np.linalg.norm(p.rel_xyz, axis = 0) 
                 p.vel_xyz = np.asarray([p.var('ux'), p.var('uy'), p.var('uz')]) 
                 p.vrel = p.vel_xyz - self.star_vel[:, None, None, None]
@@ -140,10 +161,13 @@ class pipeline():
         self.snaps = {}
         t_eval = []; sink_mass = []
         for io in tqdm.tqdm(range(start, end + 1), disable = not self.loading_bar):
-            sn = dis.snapshot(io, self.sn.run)
-            self.snaps[io] = sn
+            try:
+                sn = dis.snapshot(io, self.sn.run)
+                unique_sink_datapoints = [sink_eval for i, sink_eval in enumerate(sn.sinks[self.sink_id]) if sn.sinks[self.sink_id][i].time !=sn.sinks[self.sink_id][i-1].time]
+                self.snaps[io] = sn
+            except:
+                continue
             
-            unique_sink_datapoints = [sink_eval for i, sink_eval in enumerate(sn.sinks[self.sink_id]) if sn.sinks[self.sink_id][i].time !=sn.sinks[self.sink_id][i-1].time]
             sink_times = [_.time for _ in unique_sink_datapoints] 
             sink_masses = [_.mass for _ in unique_sink_datapoints]
             
