@@ -20,7 +20,7 @@ patch_diag = lambda patch: 0.5 * (np.sum(patch.size**2))**0.5
 
 sinks = [6, 13, 14, 25, 82, 122, 162, 180, 225]
 true_sinks = [6, 13, 13, 24, 80, 122, 161, 178, 225]
-first_sink_snap = [159, 223, 177, 213, 236, 342, 402, 404, 446]
+first_sink_snap = [158, 223, 177, 213, 236, 342, 402, 404, 446]
 
 sink_positions_array = np.array([[0.175920050, -0.450297541, 0.281144660],
                            [0.191895130, -0.435872910, 0.288312320], 
@@ -236,9 +236,9 @@ class pipeline():
     def recalc_L(self, height = 15, radius = 150, err_deg = 5, verbose = 1):
         if not self.cyl_calculated: self.calc_cyl()
         height /= self.au_length; radius /= self.au_length
-
-        w = np.array([p.level for p in self.sn.patches]).argsort()[::-1]
-        sorted_patches = [self.sn.patches[w[i]] for i in range(len(self.sn.patches))]
+        pp = [p for p in self.sn.patches if (p.dist_xyz < 2 * radius).any()]
+        w= np.array([p.level for p in pp]).argsort()[::-1]
+        sorted_patches = [pp[w[i]] for i in range(len(pp))]
 
         def recalc():
             L_new = np.zeros(3)
@@ -347,12 +347,15 @@ class pipeline():
 
         if verbose > 0:
             print('Transforming old z-coordinate into mean angular momentum vector')
-        new_x = np.dot(self.rotation_matrix, np.array([1,0,0])); new_y = np.dot(self.rotation_matrix, np.array([0,1,0]))
+        self.new_x = np.dot(self.rotation_matrix, np.array([1,0,0])); self.new_y = np.dot(self.rotation_matrix, np.array([0,1,0]))
         for p in tqdm.tqdm(self.sn.patches, disable = not self.loading_bar):
-            p.trans_xyz = np.sum(rotation_matrix[:, :, None, None, None] * p.rel_xyz, axis = 1)
-            p.trans_ppos = np.dot(rotation_matrix, (p.position - self.star_pos))
-            proj_r = np.sum(p.cyl_r * new_x[:, None, None, None], axis = 0)
-            proj_φ = np.sum(p.cyl_r * new_y[:, None, None, None], axis = 0)
+            p.trans_xyz = np.array([np.sum(coor[:, None, None, None] * p.rel_xyz, axis = 0) for coor in [self.new_x, self.new_y, self.L]])
+            p.trans_vrel = np.array([np.sum(coor[:, None, None, None] * p.vrel, axis = 0) for coor in [self.new_x, self.new_y, self.L]])
+            #p.trans_xyz = np.sum(rotation_matrix[:, :, None, None, None] * p.rel_xyz, axis = 1)
+            #p.trans_ppos = np.dot(rotation_matrix, (p.position - self.star_pos))
+            p.trans_ppos = np.array([np.dot(coor, p.rel_ppos) for coor in [self.new_x, self.new_y, self.L]])
+            proj_r = np.sum(p.cyl_r * self.new_x[:, None, None, None], axis = 0)
+            proj_φ = np.sum(p.cyl_r * self.new_y[:, None, None, None], axis = 0)
             p.φ = np.arctan2(proj_φ, proj_r) + np.pi
             
 

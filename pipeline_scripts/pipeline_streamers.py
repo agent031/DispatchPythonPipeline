@@ -24,80 +24,81 @@ def infall_sphere(self, shell_r=50, shell_Δpct=0.05, lon_N=360, lat_N=180, rang
     longtitude = []
     latitude = []
     patch_mass = []
-    if verbose > 0:
-        print('Loop through patch present in defined shell')
-    for p in tqdm.tqdm((self.sn.patches), disable=(not self.loading_bar)):
-        try:
-            p.trans_xyz
-        except:
-            self.calc_trans_xyz(verbose=0)
-        else:
-            nbors = [self.sn.patchid[i] for i in p.nbor_ids if i in self.sn.patchid]
-            children = [n for n in nbors if n.level == p.level + 1]
-            leafs = [n for n in children if ((n.position - p.position) ** 2).sum() < (p.size ** 2).sum() / 12]
-            if len(leafs) == 8:
-                pass
-            else:
-                R = np.linalg.norm((p.rel_xyz), axis=0)
-                to_extract = (R < shell_r + Δ_r) & (R > shell_r - Δ_r)
-                for lp in leafs:
-                    leaf_extent = np.vstack((lp.position - 0.5 * lp.size, lp.position + 0.5 * lp.size)).T
-                    covered_bool = ~np.all(((p.xyz > leaf_extent[:, 0, None, None, None]) & (p.xyz < leaf_extent[:, 1, None, None, None])), axis=0)
-                    to_extract *= covered_bool
-                else:
-                    new_xyz = p.trans_xyz[:, to_extract].T
-                    new_R = np.linalg.norm(new_xyz, axis=1)
-                    new_value = (p.var('d') * np.sum((p.vrel * p.rel_xyz / np.linalg.norm((p.rel_xyz), axis=0)), axis=0))[to_extract].T
-                    mass = p.m[to_extract].T
-                    longtitude.extend(np.arctan2(new_xyz[:, 1], new_xyz[:, 0]).tolist())
-                    latitude.extend(np.arcsin(new_xyz[:, 2] / new_R).tolist())
-                    patch_values.extend(new_value.tolist())
-                    patch_cartcoor.extend(new_xyz.tolist())
-                    patch_mass.extend(mass.tolist())
+    if verbose > 0: print('Loop through patch present in defined shell')
 
-    else:
-        longtitude = np.asarray(longtitude)
-        latitude = np.asarray(latitude)
-        patch_values = np.asarray(patch_values)
-        patch_mass = np.asarray(patch_mass)
-        lon = np.linspace(-np.pi, np.pi, lon_N)
-        lat = np.linspace(-np.pi / 2.0, np.pi / 2.0, lat_N)
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', category=RuntimeWarning)
-            hist_mass, binedges_lon, binedges_lat = np.histogram2d(longtitude, latitude, bins=(lon, lat), weights=patch_mass)
-            hist_values = np.histogram2d(longtitude, latitude, bins=(lon, lat), weights=(patch_values * patch_mass))[0] / hist_mass
-        lon_bins = lon[:-1] + 0.5 * np.diff(binedges_lon)
-        lat_bins = lat[:-1] + 0.5 * np.diff(binedges_lat)
-        Lon, Lat = np.meshgrid(lon_bins, lat_bins, indexing='ij')
-        proj_data = self._fill_2Dhist(hist_values, orig_coor=[lon_bins, lat_bins], new_coor=[lon_bins, lat_bins], method='nearest', periodic_x=False)
-        proj_data *= -self.msun_mass / (self.au_length ** 2 * self.sn.cgs.yr)
-        total_infall = simps(simps((proj_data * (shell_r * self.au_length) ** 2), (lon_bins + np.pi), axis=0) * np.sin(lat_bins + np.pi / 2), lat_bins)
+    pp = [p for p in self.sn.patches if (p.dist_xyz < shell_r * 2).any()]
+    w = np.array([p.level for p in pp]).argsort()[::-1]
+    sorted_patches = [pp[w[i]] for i in range(len(pp))]
+
+    for p in tqdm.tqdm(sorted_patches, disable=(not self.loading_bar)):
+        try: p.trans_xyz
+        except: self.calc_trans_xyz(verbose=0)
+        nbors = [self.sn.patchid[i] for i in p.nbor_ids if i in self.sn.patchid]
+        children = [n for n in nbors if n.level == p.level + 1]
+        leafs = [n for n in children if ((n.position - p.position) ** 2).sum() < (p.size ** 2).sum() / 12]
+        if len(leafs) == 8: continue
+        to_extract = (p.dist_xyz < shell_r + Δ_r) & (p.dist_xyz > shell_r - Δ_r)
+        for lp in leafs:
+            leaf_extent = np.vstack((lp.position - 0.5 * lp.size, lp.position + 0.5 * lp.size)).T
+            covered_bool = ~np.all(((p.xyz > leaf_extent[:, 0, None, None, None]) & (p.xyz < leaf_extent[:, 1, None, None, None])), axis=0)
+            to_extract *= covered_bool
+
+        new_xyz = p.trans_xyz[:, to_extract].T
+        new_R = np.linalg.norm(new_xyz, axis=1)
+        new_value = (p.var('d') * np.sum((p.trans_vrel * p.trans_xyz / np.linalg.norm(p.trans_xyz, axis=0)), axis=0))[to_extract].T
+        mass = p.m[to_extract].T
+        longtitude.extend(np.arctan2(new_xyz[:, 1], new_xyz[:, 0]).tolist())
+        latitude.extend(np.arcsin(new_xyz[:, 2] / new_R).tolist())
+        patch_values.extend(new_value.tolist())
+        patch_cartcoor.extend(new_xyz.tolist())
+        patch_mass.extend(mass.tolist())
+
+
+    longtitude = np.asarray(longtitude)
+    latitude = np.asarray(latitude)
+    patch_values = np.asarray(patch_values)
+    patch_mass = np.asarray(patch_mass)
+    lon = np.linspace(-np.pi, np.pi, lon_N)
+    lat = np.linspace(-np.pi / 2.0, np.pi / 2.0, lat_N)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', category=RuntimeWarning)
+        hist_mass, binedges_lon, binedges_lat = np.histogram2d(longtitude, latitude, bins=(lon, lat), weights=patch_mass)
+        hist_values = np.histogram2d(longtitude, latitude, bins=(lon, lat), weights=(patch_values * patch_mass))[0] / hist_mass
+
+    lon_bins = lon[:-1] + 0.5 * np.diff(binedges_lon)
+    lat_bins = lat[:-1] + 0.5 * np.diff(binedges_lat)
+    Lon, Lat = np.meshgrid(lon_bins, lat_bins, indexing='ij')
+
+
+    proj_data = self._fill_2Dhist(hist_values, orig_coor=[lon_bins, lat_bins], new_coor=[lon_bins, lat_bins], method='nearest', periodic_x=False)
+    proj_data *= -self.msun_mass / (self.au_length ** 2 * self.sn.cgs.yr)
+
+    total_infall = simps(simps((proj_data * (shell_r * self.au_length) ** 2), (lon_bins + np.pi), axis=0) * np.sin(lat_bins + np.pi / 2), lat_bins)
+    if normalized:
+        @np.vectorize
+        def calc_area_sphere(R, φi, φf, θi, θf):
+            return dblquad((lambda θ, φ: R ** 2 * np.sin(φ)), θi, θf, φi, φf)[0]
+
+        lon_new = lon + np.pi
+        lat_new = lat + 0.5 * np.pi
+        cell_areas = np.array([calc_area_sphere(shell_r * self.au_length, lon_new[0], lon_new[1], lat_new[:-1], lat_new[1:]) for _ in range(lon_N - 1)])
+        proj_data *= cell_areas
+        total_infall = np.sum(proj_data)
+    if plot:
+        fig = plt.figure(figsize=(10, 7), dpi=dpi)
+        ax = fig.add_subplot(111, projection='hammer')
+        ax.set_yticks([])
+        ax.set_xticks([])
+        im = ax.pcolormesh(Lon, Lat, proj_data, cmap='coolwarm', snap=True, norm=colors.SymLogNorm(linthresh=linear_threshold, linscale=0.5, vmin=(-range_plot), vmax=range_plot), shading='gouraud')
+        cbar = fig.colorbar(im, orientation='horizontal')
         if normalized:
-            @np.vectorize
-            def calc_area_sphere(R, φi, φf, θi, θf):
-                return dblquad((lambda θ, φ: R ** 2 * np.sin(φ)), θi, θf, φi, φf)[0]
-
-            lon_new = lon + np.pi
-            lat_new = lat + 0.5 * np.pi
-            cell_areas = np.array([calc_area_sphere(shell_r * self.au_length, lon_new[0], lon_new[1], lat_new[:-1], lat_new[1:]) for _ in range(lon_N - 1)])
-            proj_data *= cell_areas
-            total_infall = np.sum(proj_data)
-        if plot:
-            fig = plt.figure(figsize=(10, 7), dpi=dpi)
-            ax = fig.add_subplot(111, projection='hammer')
-            ax.set_yticks([])
-            ax.set_xticks([])
-            im = ax.pcolormesh(Lon, Lat, proj_data, cmap='coolwarm', snap=True, norm=colors.SymLogNorm(linthresh=linear_threshold, linscale=0.5, vmin=(-range_plot), vmax=range_plot), shading='gouraud')
-            cbar = fig.colorbar(im, orientation='horizontal')
-            if normalized:
-                cbar.set_label('Mass accretion [M$_\\odot$yr$^{-1}$]', labelpad=(-80), y=2, rotation=0, fontsize=16)
-            else:
-                cbar.set_label('Mass accretion per area [M$_\\odot$au$^{-2}$yr$^{-1}$]', labelpad=(-80), y=2, rotation=0, fontsize=16)
-            ax.set(title=f"Radius = {shell_r * self.au_length:2.0f}$\\pm${Δ_r * self.au_length:1.0f} au, Total infall {total_infall * 1000000.0:2.1f} 10$^{{-6}}$ M$_\\odot$yr$^{-1}$")
-            plt.tight_layout()
-        if get_data:
-            return (
-             Lon, Lat, proj_data, total_infall)
+            cbar.set_label('Mass accretion [M$_\\odot$yr$^{-1}$]', labelpad=(-80), y=2, rotation=0, fontsize=16)
+        else:
+            cbar.set_label('Mass accretion per area [M$_\\odot$au$^{-2}$yr$^{-1}$]', labelpad=(-80), y=2, rotation=0, fontsize=16)
+        ax.set(title=f"Radius = {shell_r * self.au_length:2.0f}$\\pm${Δ_r * self.au_length:1.0f} au, Total infall {total_infall * 1000000.0:2.1f} 10$^{{-6}}$ M$_\\odot$yr$^{-1}$")
+        plt.tight_layout()
+    if get_data:
+        return (Lon, Lat, proj_data, total_infall)
 
 
 pipeline.infall_sphere = infall_sphere

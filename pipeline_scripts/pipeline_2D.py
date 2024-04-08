@@ -1,7 +1,9 @@
 import numpy as np
 import tqdm 
-import osyris
 import sys
+
+sys.path.insert(0, '/groups/astro/kxm508/codes/osyris/src')
+import osyris
 
 from pipeline_main import pipeline
 
@@ -9,7 +11,7 @@ from pipeline_main import pipeline
 #### ADDING AN ARGUMENT FOR EXTRACTING VECTOR. THE VECTORE MOST ALREADY BE MADE LIKE p.B:
 #### p.B = np.concatenate([p.var(f'b'+axis)[None,...] for axis in ['x','y','z']], axis = 0)
 
-def to_osyris_ivs(self, variables, data_name, view = 200, dz = None, resolution = 400, viewpoint = None, vectors = None, verbose = 1):
+def to_osyris_ivs(self, variables, data_name, view = 200, dz = None, resolution = 400, viewpoint = 'top', vectors = None, verbose = 1):
     selection_radius =  (np.sqrt(2 * (0.5*view)**2) * 2)/ self.au_length # Not all data is needed to be read for a single slap of data
 
     if verbose > 0: print('Looping over DISPATCH data to extract data at highest level')
@@ -72,9 +74,29 @@ def to_osyris_ivs(self, variables, data_name, view = 200, dz = None, resolution 
     ds.set_units()
     ds.meta["ndim"] = 3
 
-    if type(viewpoint) != np.ndarray: viewpoint = self.L
-    to_view = osyris.Vector(x=viewpoint[0],y=viewpoint[1],z=viewpoint[2])
+    #### Defining viewpoint coordinate system #####
+    try: self.new_x
+    except: self.calc_trans_xyz(verbose = verbose)
 
+    try: self.L
+    except: self.recalc_L() 
+
+    if (viewpoint == np.array(['x', 'y', 'z'])).any():
+        to_view = viewpoint
+    else:
+        dir_vecs = {}
+        dir_vecs['pos_u'] = osyris.Vector(x=self.new_x[0],  y = self.new_x[1], z=self.new_x[2])
+        dir_vecs['pos_v'] = osyris.Vector(x=self.new_y[0],  y = self.new_y[1], z=self.new_y[2])
+        dir_vecs['normal'] = osyris.Vector(x=self.L[0],     y=self.L[1],       z=self.L[2])
+    if viewpoint == 'top':
+        to_view = dir_vecs
+    elif viewpoint == 'edge':
+        dir_vecs2 = dir_vecs.copy()
+        dir_vecs2['normal'] = dir_vecs['pos_u']
+        dir_vecs2['pos_u'] = dir_vecs['pos_v']
+        dir_vecs2['pos_v'] = dir_vecs['normal']
+        to_view = dir_vecs2
+        
     view *= osyris.units('au')
     if dz == None: dz = 0.1 * view
     else: dz *= osyris.units('au')
