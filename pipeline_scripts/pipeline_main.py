@@ -174,6 +174,24 @@ class pipeline():
             t_eval.extend(sink_times)
             sink_mass.extend(sink_masses)        
 
+        t = np.asarray(t_eval).flatten()
+        m = np.asarray(sink_mass).flatten()
+        ##### The following while loop is to sort out repeated or unphysical data: either backwards timesteps or decrease in sink mass ####
+        while True:
+            index_to_remove = []
+            for i in range(1, len(t)):
+                if m[i] < m[i - 1]:
+                    index_to_remove.append(i - np.argmax([m[i], m[i - 1]]))
+                elif t[i] < t[i - 1]:
+                    index_to_remove.append(i)
+
+            if len(index_to_remove) == 0:
+                break
+            else:
+                t =  np.delete(t, np.array(index_to_remove))
+                m = np.delete(m, np.array(index_to_remove))  
+        t_eval = t       
+        sink_mass = m
         self.t_eval = np.asarray(t_eval).flatten() * self.yr_time
         self.sink_mass = np.asarray(sink_mass).flatten() * self.msun_mass
         self.sink_accretion = np.gradient(self.sink_mass, self.t_eval, edge_order = 2)
@@ -183,9 +201,9 @@ class pipeline():
         self.init_class(change_to, run = self.sn.run, initialize = initialize)
 
     #Calculate mean angular momentum vector
-    def calc_L(self, distance = 100,  angle_to_calc = None, verbose = 0):
+    def calc_L(self, radius = 100,  angle_to_calc = None, verbose = 0):
         L = np.zeros(3)
-        d = distance / self.au_length
+        d = radius / self.au_length
         if verbose != 0: 
             patches_skipped = 0 
             contained = 0
@@ -236,7 +254,7 @@ class pipeline():
     def recalc_L(self, height = 15, radius = 150, err_deg = 5, verbose = 1):
         if not self.cyl_calculated: self.calc_cyl()
         height /= self.au_length; radius /= self.au_length
-        pp = [p for p in self.sn.patches if (p.dist_xyz < 2 * radius).any()]
+        pp = [p for p in self.sn.patches if (p.dist_xyz < radius).any()]
         w= np.array([p.level for p in pp]).argsort()[::-1]
         sorted_patches = [pp[w[i]] for i in range(len(pp))]
 
@@ -269,7 +287,7 @@ class pipeline():
 
 
     # Caculate the disk size and thereby also the azimuthal velocity
-    def calc_disksize(self, height = 10, radius = 1000, r_in = 10, radial_bins = 100, a = 0.8, plot = True, verbose = 1):
+    def calc_disksize(self, height = 20, radius = 1000, r_in = 10, radial_bins = 200, a = 0.8, plot = True, verbose = 1):
         if not self.cyl_calculated: self.calc_cyl()
 
         rad_bins = np.logspace(np.log10(r_in), np.log10(radius), radial_bins) / self.au_length    
@@ -323,7 +341,9 @@ class pipeline():
             axs[1].set(xlabel = 'Distance from sink [AU]', ylim = (0.5, 1.1))
             axs[1].legend(frameon = False)
     
-    def calc_trans_xyz(self, verbose = 1):
+    def calc_trans_xyz(self, verbose = 1, top = 'L'):
+        if not self.cyl_calculated: self.calc_cyl()
+
         #https://en.wikipedia.org/wiki/Euler%E2%80%93Rodrigues_formula
         def rotation_matrix_func(axis, theta):
             """
@@ -348,6 +368,12 @@ class pipeline():
         if verbose > 0:
             print('Transforming old z-coordinate into mean angular momentum vector')
         self.new_x = np.dot(self.rotation_matrix, np.array([1,0,0])); self.new_y = np.dot(self.rotation_matrix, np.array([0,1,0]))
+        if top != 'L':
+            if top == 'x':
+                new_x = self.new_y.copy(); new_y = self.L.copy(); new_L = self.new_x.copy() 
+            if top == 'y':
+                new_x = self.L.copy(); new_y = self.new_x.copy(); new_L = self.new_y.copy()
+            self.new_x = new_x; self.new_y = new_y; self.L = new_L 
         for p in tqdm.tqdm(self.sn.patches, disable = not self.loading_bar):
             p.trans_xyz = np.array([np.sum(coor[:, None, None, None] * p.rel_xyz, axis = 0) for coor in [self.new_x, self.new_y, self.L]])
             p.trans_vrel = np.array([np.sum(coor[:, None, None, None] * p.vrel, axis = 0) for coor in [self.new_x, self.new_y, self.L]])
