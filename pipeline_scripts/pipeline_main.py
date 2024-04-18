@@ -4,6 +4,7 @@ import astropy.units as u
 import tqdm
 import os
 import matplotlib.pyplot as plt
+from scipy.ndimage import uniform_filter1d
 import pickle
 
 top = os.getenv('HOME')+'/codes/dispatch2/'
@@ -245,6 +246,8 @@ class pipeline():
             p.e_r = p.cyl_r / p.cyl_R
             p.e_φ = np.cross(self.L, p.e_r, axisa=0, axisb=0, axisc=0)
             p.vφ = np.sum(p.vrel * p.e_φ, axis = 0)
+            p.vr = np.sum(p.vrel * p.e_r, axis = 0)
+            p.vz = np.sum(p.vrel * self.L[:,None,None,None], axis = 0)
             p.position_cylZ = np.dot(self.L, p.position - self.star_pos)
             p.position_cylr = (p.position - self.star_pos) - p.position_cylZ * self.L
         self.cyl_calculated = True
@@ -287,7 +290,7 @@ class pipeline():
 
 
     # Caculate the disk size and thereby also the azimuthal velocity
-    def calc_disksize(self, height = 20, radius = 1000, r_in = 10, radial_bins = 200, a = 0.8, plot = True, verbose = 1):
+    def calc_disksize(self, height = 20, radius = 1000, r_in = 10, radial_bins = 200, a = 0.8, plot = True, avg_cells = 10, verbose = 1):
         if not self.cyl_calculated: self.calc_cyl()
 
         rad_bins = np.logspace(np.log10(r_in), np.log10(radius), radial_bins) / self.au_length    
@@ -301,7 +304,7 @@ class pipeline():
         for p in tqdm.tqdm(self.sn.patches, disable = not self.loading_bar):
             #Cutting which pathces to look through cells (in height) encompass very large and thereby low level patches not representing the orbital velocity in the disk.
             #The strict cut in pacthes has to made in height - several combination have tested
-            if abs(p.position_cylZ) <= height and (p.cyl_R < radius).any():
+            if (abs(p.cyl_z) <= height).any and (p.cyl_R < radius).any():
                 
                 h_mass, _ = np.histogram(p.cyl_R, bins = rad_bins, weights =  p.m)
                 h_vφ, _ = np.histogram(p.cyl_R, bins = rad_bins, weights =  p.vφ * p.m)
@@ -317,8 +320,10 @@ class pipeline():
         
         kep_vel = (((G * self.M_star) / (r_plot * self.au_length * u.au))**0.5).to('cm/s').value
 
+        orbitvel_ratio_mean = uniform_filter1d(self.vφ / kep_vel, size = avg_cells)
+
         for i in range(len(self.vφ)):
-            if self.vφ[i] / kep_vel[i] < a:
+            if orbitvel_ratio_mean[i] < a:
                 self.disk_size = r_plot[i] * self.au_length
                 if verbose > 0: print(f'Disk size: {self.disk_size:2.1f} au')
                 break
@@ -332,13 +337,13 @@ class pipeline():
             axs[0].loglog(r_plot * self.au_length, self.vφ , label = 'Azimuthal velocity v$_φ$', c = 'blue')
             axs[0].fill_between(r_plot * self.au_length, self.vφ - σ_φ, self.vφ + σ_φ, alpha = 0.5, label = '$\pm1\sigma_{φ}$')
 
-            axs[0].set(xlabel = 'Distance from sink [AU]', ylabel = 'Orbital speed [cm/s]')
+            axs[0].set(xlabel = 'Distance from sink [au]', ylabel = 'Orbital speed [cm/s]', xlim = np.array([r_plot[0], r_plot[-1]])* self.au_length)
 
             axs[0].legend(frameon = False)
-            axs[1].semilogx(r_plot * self.au_length, self.vφ / kep_vel, label = 'v$_φ$/v$_K$ ratio', color = 'black', lw = 0.8)
+            axs[1].semilogx(r_plot * self.au_length, orbitvel_ratio_mean, label = 'v$_φ$/v$_K$ ratio', color = 'black', lw = 0.8)
             axs[1].axhline(a, color = 'red', ls = '--', label = f'a = {a}')
             axs[1].axhline(1, color = 'black', ls = '-', alpha = 0.7)
-            axs[1].set(xlabel = 'Distance from sink [AU]', ylim = (0.5, 1.1))
+            axs[1].set(xlabel = 'Distance from sink [au]', ylim = (0.5, 1.1), xlim = np.array([r_plot[0], r_plot[-1]])* self.au_length)
             axs[1].legend(frameon = False)
     
     def calc_trans_xyz(self, verbose = 1, top = 'L'):
