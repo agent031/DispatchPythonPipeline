@@ -11,7 +11,7 @@ from pipeline_main import pipeline
 #________________________________THIS UPDATED VERSION OF THE 1D PIPELINE TAKES CARE OF OVERLAPPING PATCHES________________________#
 
 # Calculate the surface density of the disk
-def to_1D(self, r_in = 5, r_out = 100, Nr = 100, plot = True, dpi = 100, verbose = 1):
+def to_1D(self, r_in = 5, r_out = 100, Nr = 100, plot = True, MMSN = True, dpi = 100, verbose = 1):
     if not self.cyl_calculated: self.recalc_L(verbose = 0)
 
     self.Nr = Nr
@@ -110,27 +110,31 @@ def to_1D(self, r_in = 5, r_out = 100, Nr = 100, plot = True, dpi = 100, verbose
         sigmas = np.asarray([calc_sigma(σ * self.H_1D[:,0]) for σ in range(1, 3)])
         fig, axs = plt.subplots(1,3, figsize = (20, 6), dpi = dpi)
         ax = axs[0]
-        ax.grid(which = 'minor', ls = '--', c = 'grey');
 
         ax.loglog(self.r_1D * self.au_length, self.Σ_1D[:,0], color = 'blue', label = 'Σ$_{Fit}$')
         for i in reversed(range(1, 3)):
-            ax.loglog(self.r_1D * self.au_length, sigmas[i - 1], color = 'red', label = 'Σ$_{Calc}$'+f'$\propto\int\pm{i}H_p$', alpha = i/2, lw = 0.8)
+            ax.loglog(self.r_1D * self.au_length, sigmas[i - 1], color = 'red', label = 'Σ$_{Calc}$'+f'$\propto\int\pm{i}H$', alpha = i/2, lw = 0.8)
         ax.fill_between(self.r_1D * self.au_length, self.Σ_1D[:,0] + self.Σ_1D[:,1], self.Σ_1D[:,0] - self.Σ_1D[:,1], alpha = 0.45, color = 'blue')
         ax.set(ylabel = 'Σ$_{gas}$ [g/cm$^2$]', xlabel = 'Distance from sink [au]', title = 'Surface density Σ$_{gas}$(r)')
+
+        if MMSN:
+            Σ_MMSN = lambda r: 1700 * (r)**(-3/2)
+            r = self.r_1D * self.au_length
+            #ax.text(r[0], Σ_MMSN(r)[0] - 25, 'Σ$_{MMSN}\propto r^{-3/2}$', va = 'top', ha = 'left', rotation = -26, color = 'grey')
+            ax.loglog(r, Σ_MMSN(r), color = 'grey', ls = '--', label = 'Σ$_{MMSN}\propto r^{-3/2}$')
+
         ax.legend(frameon = False)
 
         ax = axs[1]
-        ax.grid(which = 'both', ls = '--')
-        ax.loglog(self.r_1D * self.au_length, self.H_1D[:,0], label = 'Scaleheight H$_p$', color = 'green')
+        ax.loglog(self.r_1D * self.au_length, self.H_1D[:,0], label = 'Scale height H', color = 'green')
         ax.fill_between(self.r_1D * self.au_length, self.H_1D[:,0] + self.H_1D[:,1], self.H_1D[:,0] - self.H_1D[:,1], alpha = 0.3, color = 'green', label = '$\pm σ_H$')
-        ax.set(ylabel = 'Scaleheight [au]', xlabel = 'Distance from sink [au]', title = 'Scaleheight  H$_p$(r)')
+        ax.set(ylabel = 'Scale height [au]', xlabel = 'Distance from sink [au]', title = 'Scale height  H(r)')
         ax.legend(frameon = False)
 
         ax = axs[2]
-        self.φ =  np.vstack((np.sin(self.H_1D[:,0] / (self.r_1D * self.au_length)), np.cos(self.H_1D[:,1] / (self.r_1D * self.au_length)) * (self.r_1D * self.au_length)**(-1) * self.H_1D[:,1])).T
-        ax.grid()
+        self.φ =  np.vstack((self.H_1D[:,0] / (self.r_1D * self.au_length), self.H_1D[:,1] / (self.r_1D * self.au_length))).T
 
-        ax.semilogx(self.r_1D * self.au_length, self.φ[:,0], color = 'purple', label = 'Opening angle H$_p$')
+        ax.semilogx(self.r_1D * self.au_length, self.φ[:,0], color = 'purple', label = 'Opening angle H/r')
         ax.fill_between(self.r_1D * self.au_length, self.φ[:,0] + self.φ[:,1], self.φ[:,0] - self.φ[:,1], color = 'purple', alpha = 0.3, label = '$\pm σ_φ$')
 
         #Values for ticks
@@ -140,10 +144,8 @@ def to_1D(self, r_in = 5, r_out = 100, Nr = 100, plot = True, dpi = 100, verbose
         ax2 = ax.twinx()
         ax2.set_yticks(np.rad2deg(values))
         ax2.set_yticklabels([f'{deg:2.0f}'+'$^{\circ}$' for deg in np.rad2deg(values)])
-        ax.set(ylabel = 'Opening angle [rad/deg]', xlabel = 'Distance from sink [au]', title = 'Opening angle H$_p$/r(r)')
+        ax.set(ylabel = 'Opening angle [rad/deg]', xlabel = 'Distance from sink [au]', title = 'Opening angle H/r(r)')
         ax.legend(frameon = False)
-        try: fig.suptitle(f'Estimated disk size from azimuthal velocities: {self.disk_size:2.1f} au')
-        except: fig.suptitle(f'No disk size calculated')
         plt.tight_layout()
 
 pipeline.to_1D = to_1D

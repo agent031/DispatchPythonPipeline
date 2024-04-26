@@ -124,18 +124,20 @@ def flow_fraction(self, hammer_data, verbose = 1):
 pipeline.flow_fraction = flow_fraction
 
 
-################ OBS NOT WORKING WITH IVS LIST; MUST BE FIXED #################
+################ NOW WORKING WITH IVS LIST; IS FIXED #################
 ###############################################################################
 
 
-def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, phi_extent=None, quiver_dens=0.6, log_vmin=-20, log_vmax=-12, ivs=None, plot=True):
+def phi_average(self, variables = None, variables_weight = None, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, phi_extent=None, quiver_dens=0.6, log_vmin=-20, log_vmax=-12, plot=True):
     radius /= self.au_length
     height /= self.au_length
     selection_radius = np.sqrt(radius ** 2 + height ** 2) * 1.2
     pp = [p for p in self.sn.patches if np.linalg.norm((p.rel_ppos), axis=0) < selection_radius]
     w = np.array([p.level for p in pp]).argsort()[::-1]
     sorted_patches = [pp[w[i]] for i in range(len(pp))]
-    extracted_values = {key: [] for key in range(6 + len(ivs))} if ivs is not None else {key: [] for key in range(6)}
+    extracted_values = {key: [] for key in range(6)}
+    if variables != None: extracted_values.update({key: [] for key in variables})
+
     try:
         self.rotation_matrix
     except:
@@ -163,13 +165,13 @@ def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, ph
         z_coor = p.cyl_z[to_extract].T
         R_coor = p.cyl_R[to_extract].T
         mass_val = p.m[to_extract].T
-        if ivs != None:
-            for i, iv in enumerate(ivs):
+        if variables != None:
+            for i, iv in enumerate(variables):
                 if hasattr(p, iv):
                     value = getattr(p, iv)[to_extract].T
                 else:
                     value = p.var(iv)[to_extract].T
-                extracted_values[6 + i].extend(value)          
+                extracted_values[iv].extend(value)          
 
         extracted_values[0].extend(R_coor.tolist())
         extracted_values[1].extend(z_coor.tolist())
@@ -187,16 +189,12 @@ def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, ph
     z_grid = np.insert(z_grid, 0, 0)
     z_grid = np.concatenate((-np.logspace(np.log10(origo_close), np.log10(height * self.au_length), Nh_half)[::-1] / self.au_length, z_grid))
     hist_mass, binedges_R, binedges_z = np.histogram2d((extracted_values[0]), (extracted_values[1]), bins=(R_grid, z_grid), weights=(extracted_values[4]))
-
-    if ivs != None:
-        hist_val, _, _ = np.histogram2d((extracted_values[0]), (extracted_values[1]), bins=(R_grid, z_grid), weights=(extracted_values[6] * extracted_values[4]))
-        hist_val /= hist_mass
-    hist_vol, _, _ = np.histogram2d((extracted_values[0]), (extracted_values[1]), bins=(R_grid, z_grid), weights=(extracted_values[5] * self.sn.scaling.l ** 3))
-    hist_ρ = hist_mass * self.sn.scaling.m / hist_vol
+    hist_vol, _, _ = np.histogram2d((extracted_values[0]), (extracted_values[1]), bins=(R_grid, z_grid), weights=(extracted_values[5]))
+    hist_ρ = hist_mass * self.sn.scaling.m / (hist_vol * self.sn.scaling.l ** 3)
 
     R_bins = R_grid[:-1] + 0.5 * np.diff(binedges_R)
     z_bins = z_grid[:-1] + 0.5 * np.diff(binedges_z)
-    
+
     quiver_shift = 1
     quivergrid_vr = np.linspace(origo_close / 2, R_grid.max() * self.au_length - quiver_shift, int(NR * quiver_dens)) / self.au_length
     quivergrid_vz = np.linspace(origo_close / 2, z_grid.max() * self.au_length - quiver_shift, int(Nh_half * quiver_dens)) / self.au_length
@@ -205,22 +203,42 @@ def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, ph
     mass, qbinedgesR, qbinedgesz = np.histogram2d((extracted_values[0]), (extracted_values[1]), bins=(quivergrid_vr, quivergrid_vz), weights = extracted_values[4])
     hist_vr, _, _ = np.histogram2d((extracted_values[0]), (extracted_values[1]), bins=(quivergrid_vr, quivergrid_vz), weights=(extracted_values[4] * extracted_values[2] * self.cms_velocity))
     hist_vz, _, _ = np.histogram2d((extracted_values[0]), (extracted_values[1]), bins=(quivergrid_vr, quivergrid_vz), weights=(extracted_values[4] * extracted_values[3] * self.cms_velocity))    
+    
+    arrow_length = np.sqrt((hist_vr / mass) ** 2 + (hist_vz / mass) ** 2)
+    arrow_length[np.isnan(arrow_length)] = 1e-20
 
     vR_bins = quivergrid_vr[:-1] + 0.5 * np.diff(qbinedgesR)
     vz_bins = quivergrid_vz[:-1] + 0.5 * np.diff(qbinedgesz)
 
-    arrow_length = np.sqrt((hist_vr / mass) ** 2 + (hist_vz / mass) ** 2)
-    arrow_length[np.isnan(arrow_length)] = 1e-20
-    
     rr_ρ, zz_ρ = np.meshgrid(R_bins, z_bins, indexing='ij')
     rr_v, zz_v = np.meshgrid(vR_bins, vz_bins, indexing='ij')
-    
+
     mask = np.isnan(hist_ρ.flatten())
     masked_hist_ρ = np.ma.masked_array((hist_ρ.flatten()), mask=mask)
-    if ivs != None:
-        masked_hist_val = np.ma.masked_array((hist_val.flatten()), mask=mask)
-        interpolation_val = interpolate.griddata((np.hstack((rr_ρ.flatten()[:, None][~mask], zz_ρ.flatten()[:, None][~mask]))), (masked_hist_val[~mask]), xi=(rr_ρ, zz_ρ), method='nearest')
     interpolation = interpolate.griddata((np.hstack((rr_ρ.flatten()[:, None][~mask], zz_ρ.flatten()[:, None][~mask]))), (masked_hist_ρ[~mask]), xi=(rr_ρ, zz_ρ), method='nearest')
+
+    data = {}
+    data['r_bins'] = R_bins; 
+    data['z_bins'] = z_bins; 
+    data['d'] = interpolation; 
+    data['quiver_r_bins'] = rr_v; 
+    data['quiver_z_bins'] = zz_v; 
+    data['hist_vr'] = hist_vr / mass / arrow_length; 
+    data['hist_vz'] =  hist_vz / mass / arrow_length; 
+    data['arrow_length'] = arrow_length
+    
+    if variables != None:
+        for i, iv in enumerate(variables):
+            if variables_weight[i] == 'mass' : weight = extracted_values[4]; weight_hist = hist_mass
+            elif variables_weight[i] == 'volume' : weight = extracted_values[5]; weight_hist = hist_vol
+
+            hist_val, _, _ = np.histogram2d((extracted_values[0]), (extracted_values[1]), bins=(R_grid, z_grid), weights=(weight * extracted_values[iv]))
+            hist_val /= weight_hist
+
+            masked_hist_val = np.ma.masked_array((hist_val.flatten()), mask=mask)
+
+            data[iv] = interpolate.griddata((np.hstack((rr_ρ.flatten()[:, None][~mask], zz_ρ.flatten()[:, None][~mask]))), (masked_hist_val[~mask]), xi=(rr_ρ, zz_ρ), method='nearest')     
+        
     if plot:
         fig, axs = plt.subplots(figsize=(20, 8))
         cs = axs.contourf((R_bins * self.au_length), (z_bins * self.au_length), (np.log10(interpolation.T)), vmin=log_vmin, vmax=log_vmax, origin='lower', levels=200, cmap='gist_heat')
@@ -240,13 +258,7 @@ def phi_average(self, radius=50, height=20, NR=80, Nh_half=30, origo_close=1, ph
         axs.axhline(0, c='black', alpha=0.4)
         fig.tight_layout()
 
-    data = {}
-    data['r_bins'] = R_bins; data['z_bins'] = z_bins; data['d'] = interpolation; 
-    data['quiver_r_bins'] = rr_v; data['quiver_z_bins'] = zz_v; 
-    data['hist_vr'] = hist_vr / mass / arrow_length; data['hist_vz'] =  hist_vz / mass / arrow_length; data['arrow_length'] = arrow_length
-    if ivs != None:
-        data
     return data
 
 
-pipeline.phiaverage = phi_average
+pipeline.phi_average = phi_average
