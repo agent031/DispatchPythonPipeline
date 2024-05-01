@@ -43,10 +43,12 @@ def infall_sphere(self, shell_r=50, shell_Δpct=0.05, lon_N=360, lat_N=180, rang
 
         new_xyz = p.trans_xyz[:, to_extract].T
         new_R = np.linalg.norm(new_xyz, axis=1)
-        new_value = (p.var('d') * np.sum((p.trans_vrel * p.trans_xyz / np.linalg.norm(p.trans_xyz, axis=0)), axis=0))[to_extract].T
+        new_value = (p.var('d') * np.sum((p.trans_vrel *  p.trans_xyz / np.linalg.norm(p.trans_xyz, axis=0)), axis=0))[to_extract].T
         mass = p.m[to_extract].T
         longtitude.extend(np.arctan2(new_xyz[:, 1], new_xyz[:, 0]).tolist())
-        latitude.extend(np.arcsin(new_xyz[:, 2] / new_R).tolist())
+
+        ### Np.arcccos gives values wihtin [0, π] but pcolormesh only plots values [-π/2, π/2] and there I add π/2 ###
+        latitude.extend((np.arccos(new_xyz[:, 2] / new_R)  - np.pi / 2).tolist()) 
         patch_values.extend(new_value.tolist())
         patch_cartcoor.extend(new_xyz.tolist())
         patch_mass.extend(mass.tolist())
@@ -57,7 +59,7 @@ def infall_sphere(self, shell_r=50, shell_Δpct=0.05, lon_N=360, lat_N=180, rang
     patch_values = np.asarray(patch_values)
     patch_mass = np.asarray(patch_mass)
     lon = np.linspace(-np.pi, np.pi, lon_N)
-    lat = np.linspace(-np.pi / 2.0, np.pi / 2.0, lat_N)
+    lat = np.linspace(-np.pi/2, np.pi/2, lat_N)
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', category=RuntimeWarning)
         counts, binedges_lon, binedges_lat = np.histogram2d(longtitude, latitude, bins=(lon, lat))

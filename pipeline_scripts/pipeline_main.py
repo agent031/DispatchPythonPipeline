@@ -37,7 +37,7 @@ sink_positions_array = np.array([[0.175920050, -0.450297541, 0.281144660],
 sink_positions = {sink: sink_positions_array[i] for i, sink in enumerate(sinks)}
 
 #__________________________________USED FOR SAVING DIRECTORIES OF DATA_____________________________#
-def serialize_directory(filename, store, directory = None, folder = '/groups/astro/kxm508/codes/python_dispatch/data_for_plotting/'):
+def serialize_dictionary(filename, store, directory = None, folder = '/groups/astro/kxm508/codes/python_dispatch/data_for_plotting/'):
     if store and directory == None:
         print('Overwriting existing filename - please choose directory when saving data')
     elif store:

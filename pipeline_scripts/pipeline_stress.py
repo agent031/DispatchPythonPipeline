@@ -23,8 +23,10 @@ def _fill_2Dhist(self, hist, orig_coor, new_coor, method = 'nearest', periodic_x
 pipeline._fill_2Dhist = _fill_2Dhist
 
 
-def L_transport(self, radius = 90, Nh = 100, N_phi = 200, refine_grid = 2, shell_Δpct = 0.05, plot = True, verbose = 1):
-    Nr = int(2 * Nh); N_phi_v = N_phi // 2; height = radius
+def L_transport(self,  radius = 90, height = None, Nh = 100, N_phi = 200, refine_grid = 2, shell_Δpct = 0.05, plot = True, verbose = 1):
+
+    Nr = int(2 * Nh); N_phi_v = N_phi // 2; 
+    if height == None : height = radius
     G_cgs = G.to('cm**3 / (g * s**2)').value
     radius /= self.au_length; height /= self.au_length; 
     
@@ -93,7 +95,7 @@ def L_transport(self, radius = 90, Nh = 100, N_phi = 200, refine_grid = 2, shell
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         hist_vφvr = np.histogram2d(extracted_values[1], extracted_values[0],  bins = (phi_grid, z_grid), weights = extracted_values[2] * extracted_values[3])[0] / hist_mass 
-        hist_BφBr = np.histogram2d(extracted_values[1], extracted_values[0],  bins = (phi_grid, z_grid), weights = extracted_values[5] * extracted_values[3])[0] / hist_mass 
+        hist_BφBr = np.histogram2d(extracted_values[1], extracted_values[0],  bins = (phi_grid, z_grid), weights = extracted_values[5] * extracted_values[4])[0] / hist_vol 
         hist_gradφ_φr =np.histogram2d(extracted_values[1], extracted_values[0],  bins = (phi_grid, z_grid), weights = extracted_values[6] * extracted_values[3])[0] / hist_mass 
 
         hist_ρ = hist_mass/hist_vol
@@ -101,7 +103,7 @@ def L_transport(self, radius = 90, Nh = 100, N_phi = 200, refine_grid = 2, shell
     if (hist_mass == 0).any and verbose == 1: print('Radial 2D histogram not completely covered')
     reynolds_radial = - hist_vφvr * hist_ρ * self.cms_velocity**2 * self.cgs_density
     maxwell_radial = hist_BφBr / (4 * np.pi) * self.sn.scaling.b**2
-    grav_radial = hist_gradφ_φr / (4 * np.pi * G_cgs) * (self.cms_velocity / self.sn.scaling.t)**2
+    grav_radial = - hist_gradφ_φr / (4 * np.pi * G_cgs) * (self.cms_velocity / self.sn.scaling.t)**2
 
     z_bins = z_grid[:-1] + 0.5 * np.diff(binedges_z)
     phi_bins = phi_grid[:-1] + 0.5 * np.diff(binedges_phi)
@@ -155,6 +157,7 @@ def L_transport(self, radius = 90, Nh = 100, N_phi = 200, refine_grid = 2, shell
     
     #___________________________________CALCULATING THE INTEGRAL (RADIAL) TO GET TOTAL CHANGE I ANGULAR MOMENTUM__________________________________________
     R = radius * self.sn.scaling.l
+
     ΔL_Rr = simps(simps(reynolds_Ir * R**2, phinew_grid, axis = 0), znew_grid * self.sn.scaling.l)
     ΔL_Mr = simps(simps(maxwell_Ir * R**2, phinew_grid, axis = 0), znew_grid * self.sn.scaling.l)
     ΔL_Gr = simps(simps(grav_Ir * R**2, phinew_grid, axis = 0), znew_grid * self.sn.scaling.l)
@@ -192,7 +195,7 @@ def L_transport(self, radius = 90, Nh = 100, N_phi = 200, refine_grid = 2, shell
             vel_φz = p.vz[to_extract].T * p.vφ[to_extract].T
             B_φz =  p.Bz[to_extract].T * p.Bφ[to_extract].T
             mass_val = p.m[to_extract].T 
-            gradφ_φz = p.gradφ_r[to_extract].T * p.gradφ_z[to_extract].T
+            gradφ_φz = p.gradφ_φ[to_extract].T * p.gradφ_z[to_extract].T
             
             extracted_values[0].extend(r_coor.tolist())
             extracted_values[1].extend(φ_coor.tolist())
@@ -205,7 +208,7 @@ def L_transport(self, radius = 90, Nh = 100, N_phi = 200, refine_grid = 2, shell
         for key in extracted_values:
             extracted_values[key] = np.array(extracted_values[key])
 
-        #Making grid in height and phi direction:
+        #Making grid in radius and phi direction:
         r_grid = np.logspace(np.log10(1e-3 / self.au_length), np.log10(radius), Nr); phi_grid = np.linspace(0, 2 * np.pi, N_phi_v)
 
         #Binning values
@@ -214,7 +217,7 @@ def L_transport(self, radius = 90, Nh = 100, N_phi = 200, refine_grid = 2, shell
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             hist_vφvz = np.histogram2d(extracted_values[1], extracted_values[0],  bins = (phi_grid, r_grid), weights = extracted_values[2] * extracted_values[3])[0] / hist_mass 
-            hist_BφBz = np.histogram2d(extracted_values[1], extracted_values[0],  bins = (phi_grid, r_grid), weights = extracted_values[5] * extracted_values[3])[0] / hist_mass 
+            hist_BφBz = np.histogram2d(extracted_values[1], extracted_values[0],  bins = (phi_grid, r_grid), weights = extracted_values[5] * extracted_values[4])[0] / hist_vol 
             hist_gradφ_φz = np.histogram2d(extracted_values[1], extracted_values[0],  bins = (phi_grid, r_grid), weights = extracted_values[6] * extracted_values[3])[0] / hist_mass 
 
             hist_ρ = hist_mass/hist_vol
@@ -249,7 +252,7 @@ def L_transport(self, radius = 90, Nh = 100, N_phi = 200, refine_grid = 2, shell
 
         
 
-    #__________________________________________________PLOTTING THE RADIAL PART OF THE STRESS_______________________________________________________
+    #__________________________________________________PLOTTING THE VERTICAL PART OF THE STRESS_______________________________________________________
 
 
     if plot:
@@ -281,7 +284,6 @@ def L_transport(self, radius = 90, Nh = 100, N_phi = 200, refine_grid = 2, shell
     ΔL_Rv = simps(simps(reynolds_Iv * r**2, phinew_gridv, axis = 0), r)
     ΔL_Mv = simps(simps(maxwell_Iv * r**2, phinew_gridv, axis = 0), r)
     ΔL_Gv = simps(simps(grav_Iv * r**2, phinew_gridv, axis = 0), r)
-
 
 
     #________________________________________________CALCULATING TOTAL ANGULAR MOMENTUM WITHIN CYLINDER_______________________________________________
@@ -319,16 +321,34 @@ def L_transport(self, radius = 90, Nh = 100, N_phi = 200, refine_grid = 2, shell
     # 1. The cylinder walls, 2. The cylinder top and bottom compined
     # Everything is in cgs units so g*cm^2 / s^2 for the integral parts
 
-    def stresses(self, verbose = 1):
+    def get_stresses(self, verbose = 1):
+        data_to_store = {}
+
+        data_to_store['reynolds_r'] = reynolds_Ir
+        data_to_store['maxwell_r'] = maxwell_Ir
+        data_to_store['grav_r'] = grav_Ir
+        data_to_store['reynolds_v'] = reynolds_Iv
+        data_to_store['maxwell_v'] = maxwell_Iv
+        data_to_store['grav_v'] = grav_Iv
+
+        data_to_store['vertical_phi'] = phinew_gridv
+        data_to_store['vertical_r'] = rnew_grid
+
+        data_to_store['radial_phi'] = phinew_grid
+        data_to_store['radial_z'] = znew_grid
+
         if verbose == 1: 
             print(f'Stresses for radius = {radius * self.au_length:2.0f} au, height = {2 * radius * self.au_length:2.0f} au')
             print('Order of stresses:',stress_names,'\n0: Radial\n1: Vertical\n2: Total angular momentum')
             print('All values are givin in cgs-units')
         radial = np.array([ΔL_Rr, ΔL_Mr, ΔL_Gr, ΔL_Rr + ΔL_Mr + ΔL_Gr])
         vertical = np.array([ΔL_Rv, ΔL_Mv, ΔL_Gv, ΔL_Rv + ΔL_Mv + ΔL_Gv])
-        return radial, vertical, L_total
+        data_to_store['Integrated components R'] = radial
+        data_to_store['Integrated components V'] = vertical
+        data_to_store['L_total'] = L_total
+        return data_to_store 
     
-    pipeline.stresses = stresses
+    pipeline.get_stresses = get_stresses
     
 pipeline.L_transport = L_transport
 

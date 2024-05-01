@@ -25,7 +25,7 @@ def to_osyris_ivs(self, variables, data_name, view = 200, dz = None, resolution 
     patch_weight = []
     if vectors is not None: patch_vectors = {key: [] for key in range(len(vectors))}
 
-    try: self.osyris_ivs[data_name]
+    try: self.osyris_ivs[data_name] = {}
     except: self.osyris_ivs = {data_name: {}}
 
     self.osyris_ivs[data_name] = {key: [] for key in variables}
