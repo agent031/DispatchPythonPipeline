@@ -11,8 +11,9 @@ from pipeline_main import pipeline
 #### ADDING AN ARGUMENT FOR EXTRACTING VECTOR. THE VECTORE MOST ALREADY BE MADE LIKE p.B:
 #### p.B = np.concatenate([p.var(f'b'+axis)[None,...] for axis in ['x','y','z']], axis = 0)
 
-def to_osyris_ivs(self, variables, data_name, view = 200, dz = None, resolution = 400, viewpoint = 'top', weights = 'mass', vectors = None, verbose = 1):
-    selection_radius =  (np.sqrt(2 * (0.5*view)**2) * 2)/ self.au_length # Not all data is needed to be read for a single slap of data
+def to_osyris_ivs(self, variables, data_name, view = 200, height = None, dz = None, center = None, resolution = 400, viewpoint = 'top', weights = 'mass', vectors = None, verbose = 1):
+    if height == None: height = view
+    selection_radius =  (np.sqrt((0.5 * height)**2 + (0.5*view)**2) * 2)/ self.au_length # Not all data is needed to be read for a single slap of data
 
     if verbose > 0: print('Looping over DISPATCH data to extract data at highest level')
     pp = [p for p in self.sn.patches if np.linalg.norm(p.rel_ppos, axis = 0) < selection_radius]
@@ -76,7 +77,7 @@ def to_osyris_ivs(self, variables, data_name, view = 200, dz = None, resolution 
         for key in patch_vectors:
             patch_vectors[key] = np.array(patch_vectors[key])
 
-    print('Setting up Osyris data structure')
+    if verbose > 0: print('Setting up Osyris data structure')
     ds = osyris.Dataset(nout = None)
     # overwrite units
     ds.meta['unit_l'] = self.sn.scaling.l
@@ -109,9 +110,11 @@ def to_osyris_ivs(self, variables, data_name, view = 200, dz = None, resolution 
         to_view = dir_vecs2
         
     view *= osyris.units('au')
+    height *= osyris.units('au')
     if dz == None: dz = 0.1 * view
     else: dz *= osyris.units('au')
-    center = osyris.Vector(x=0,y=0,z=0,unit='au')
+    if not isinstance(center, np.ndarray): center = osyris.Vector(x=0,y=0,z=0,unit='au')
+    else: center = osyris.Vector(x = center[0], y=center[1], z=center[2],unit='au')
     plot_height = dz / osyris.units('au') * self.sn.cgs.au
 
     ds['amr'] = osyris.Datagroup()
@@ -122,12 +125,12 @@ def to_osyris_ivs(self, variables, data_name, view = 200, dz = None, resolution 
     #Looping over the scalar variables set for extraction
     for i, ivs in enumerate(variables):
         ds['hydro'][ivs] = osyris.Array(patch_weight * patch_values[i], unit = 'dimensionless')
-        ret = osyris.map({"data": ds['hydro'][ivs], "norm": "log"}, dx=view, dz = dz, 
+        ret = osyris.map({"data": ds['hydro'][ivs], "norm": "log"}, dx=view, dy = height, dz = dz, 
                          origin=center, resolution=resolution, direction=to_view, plot=False, operation = "sum")
         
         if weights != None:
             ds['hydro']['w'] = osyris.Array(patch_weight, unit = 'dimensionless')
-            ret_weight = osyris.map({"data": ds['hydro']['w'], "norm": "log"}, dx=view, dz = dz, 
+            ret_weight = osyris.map({"data": ds['hydro']['w'], "norm": "log"}, dx = view, dy = height, dz = dz, 
                              origin=center, resolution=resolution, direction=to_view, plot=False, operation = "sum")
             final_weights = ret_weight.layers[0]['data']
 

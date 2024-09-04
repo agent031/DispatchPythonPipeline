@@ -5,6 +5,7 @@ import tqdm
 import os
 import matplotlib.pyplot as plt
 from scipy.ndimage import uniform_filter1d
+import multiprocessing as mp
 import pickle
 
 top = os.getenv('HOME')+'/codes/dispatch2/'
@@ -37,12 +38,12 @@ sink_positions_array = np.array([[0.175920050, -0.450297541, 0.281144660],
 sink_positions = {sink: sink_positions_array[i] for i, sink in enumerate(sinks)}
 
 #__________________________________USED FOR SAVING DIRECTORIES OF DATA_____________________________#
-def serialize_dictionary(filename, store, directory = None, folder = '/groups/astro/kxm508/codes/python_dispatch/data_for_plotting/'):
-    if store and directory == None:
+def serialize_dictionary(filename, store, dictionary = None, folder = '/groups/astro/kxm508/codes/python_dispatch/data_for_plotting/'):
+    if store and dictionary == None:
         print('Overwriting existing filename - please choose directory when saving data')
     elif store:
         with open(folder + filename, 'wb') as file:
-            pickle.dump(directory, file)
+            pickle.dump(dictionary, file)
     
     elif not store:
         with open(folder + filename, 'rb') as file:
@@ -189,7 +190,7 @@ class pipeline():
             if len(index_to_remove) == 0:
                 break
             else:
-                t =  np.delete(t, np.array(index_to_remove))
+                t = np.delete(t, np.array(index_to_remove))
                 m = np.delete(m, np.array(index_to_remove))  
         t_eval = t       
         sink_mass = m
@@ -327,6 +328,10 @@ class pipeline():
                 self.disk_size = r_plot[i] * self.au_length
                 if verbose > 0: print(f'Disk size: {self.disk_size:2.1f} au')
                 break
+            else:
+                self.disk_size = np.nan
+                if verbose > 0: print('No disk size found')
+
 
         if plot:
             fig, axs = plt.subplots(1, 2, figsize = (20,6),gridspec_kw={'width_ratios': [2, 1.5]})

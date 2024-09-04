@@ -15,6 +15,8 @@ from scipy import interpolate
 import warnings
 from pipeline_main import pipeline
 from pipeline_stress import _fill_2Dhist
+from scipy.optimize import fsolve
+import healpy as hp
 
 def infall_sphere(self, shell_r=50, shell_Δpct=0.05, lon_N=360, lat_N=180, range_plot=1e-09, linear_threshold=1e-13, dpi=100, get_data=True, plot=True, verbose=1):
     shell_r /= self.au_length
@@ -124,6 +126,78 @@ def flow_fraction(self, hammer_data, verbose = 1):
     return infall_new, outflow_new, total_infall, cell_areas
 
 pipeline.flow_fraction = flow_fraction
+
+
+
+##############################  ACCRETION PATTERN FUNCTION BELOW IS MADE WITH HEALPY#######################
+############################## PIXEL/CELL AREAS ARE NOW THE SAME ALL OVER THE SPHERE#######################
+
+def accretion_pattern(self, shell_r = 50, shell_Δpct = 0.05, verbose = 1):
+
+    shell_r /= self.au_length
+    Δ_r = np.maximum(shell_Δpct * shell_r, 2.5 * 0.5 ** self.lmax) 
+
+    patch_coord = []
+    patch_values = []
+    cell_level = []
+
+    pp = [p for p in self.sn.patches if (p.dist_xyz < shell_r * 2).any() and p.level > 5]
+    w = np.array([p.level for p in pp]).argsort()[::-1]
+    sorted_patches = [pp[w[i]] for i in range(len(pp))]
+
+    for p in tqdm.tqdm(sorted_patches, disable=(not self.loading_bar)):
+        nbors = [self.sn.patchid[i] for i in p.nbor_ids if i in self.sn.patchid]
+        children = [n for n in nbors if n.level == p.level + 1]
+        leafs = [n for n in children if ((n.position - p.position) ** 2).sum() < (p.size ** 2).sum() / 12]
+        if len(leafs) == 8: continue
+        to_extract = (p.dist_xyz < shell_r + Δ_r) & (p.dist_xyz > shell_r - Δ_r)
+        for lp in leafs:
+            leaf_extent = np.vstack((lp.position - 0.5 * lp.size, lp.position + 0.5 * lp.size)).T
+            covered_bool = ~np.all(((p.xyz > leaf_extent[:, 0, None, None, None]) & (p.xyz < leaf_extent[:, 1, None, None, None])), axis=0)
+            to_extract *= covered_bool
+
+        new_xyz = p.trans_xyz[:, to_extract].T
+        new_value = (p.var('d') * np.sum((p.trans_vrel *  p.trans_xyz / np.linalg.norm(p.trans_xyz, axis=0)), axis=0))[to_extract].T
+        patch_values.extend(new_value.tolist())
+        patch_coord.extend(new_xyz.tolist())
+        cell_level.extend(p.level * np.ones(len(patch_values)))
+
+    patch_values = np.asarray(patch_values)
+    patch_coord = np.array(patch_coord)
+    cell_level = np.asarray(cell_level)
+
+    ### Adjusting the resolution of the sphere to fit with cell level at specified radius####
+    avg_cell_level = np.rint(cell_level.mean())
+    nside = int(np.rint(fsolve(lambda x: hp.nside2resol(x) * shell_r - 0.5**avg_cell_level , 40)[0]))
+
+    npix = hp.nside2npix(nside); m_data = np.zeros(npix)
+    pixel_indices = hp.vec2pix(nside, patch_coord[:,0], patch_coord[:,1], patch_coord[:,2])
+    index, counts = np.unique(pixel_indices, return_counts=True); 
+    m = np.zeros(npix)
+    m[index] = counts
+    if verbose > 0:
+        print('Number of pixels on the sphere: ',npix)
+        print('Pixels without any representation: ', np.sum(m == 0))
+        print(f'Percentage of no-coverage: {np.sum(m == 0) / npix * 100:2.2f} %' )
+
+    cell_area = hp.nside2pixarea(nside) * shell_r**2
+    sum_value = np.bincount(pixel_indices, weights=patch_values) 
+    sum_count = np.bincount(pixel_indices)
+    map_clean = np.zeros(npix)
+    map_clean[sum_count > 0] = sum_value[sum_count > 0] / sum_count[sum_count > 0]
+
+    map_inter = map_clean.copy()
+    all_neighbours = hp.get_all_neighbours(nside, np.where(map_inter == 0))
+
+    for i, index in enumerate(np.where(map_inter == 0)[0]):
+        non_zero_neighbours = all_neighbours[:,0,i] > 0
+        map_inter[index] = np.average(map_inter[all_neighbours[:,0,i]], weights = non_zero_neighbours)
+
+    map_real = map_inter * -self.msun_mass / self.sn.cgs.yr * cell_area
+
+    return map_real, nside
+
+pipeline.accretion_pattern = accretion_pattern
 
 
 ################ NOW WORKING WITH IVS LIST; IS FIXED #################
