@@ -30,6 +30,6 @@ plt.rcParams['ytick.minor.size'] = 4
 # Set som plotting font-standards:
 font = {'family' : 'serif',
         'weight' : 'normal',
-        'size'   : 20}
+        'size'   : 12}
 mpl.rc('font', **font)
 

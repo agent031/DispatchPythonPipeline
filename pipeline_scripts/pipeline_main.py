@@ -371,19 +371,26 @@ class pipeline():
                             [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
 
         rotation_axis = np.cross(np.array([0, 0, 1]), self.L)
-        theta = np.arccos(np.dot(np.array([0, 0, 1]), self.L))
+        theta = np.arccos(np.clip(np.dot(np.array([0, 0, 1]), self.L), -1.0, 1.0))
         rotation_matrix = rotation_matrix_func(rotation_axis, theta)
         self.rotation_matrix = rotation_matrix
 
         if verbose > 0:
             print('Transforming old z-coordinate into mean angular momentum vector')
-        self.new_x = np.dot(self.rotation_matrix, np.array([1,0,0])); self.new_y = np.dot(self.rotation_matrix, np.array([0,1,0]))
+        self.new_x = np.dot(self.rotation_matrix, np.array([1,0,0])) 
+        self.new_y = np.dot(self.rotation_matrix, np.array([0,1,0]))
+        self.L = np.dot(self.rotation_matrix, np.array([0, 0, 1]))
+
         if top != 'L':
             if top == 'x':
-                new_x = self.new_y.copy(); new_y = self.L.copy(); new_L = self.new_x.copy() 
-            if top == 'y':
-                new_x = self.L.copy(); new_y = self.new_x.copy(); new_L = self.new_y.copy()
-            self.new_x = new_x; self.new_y = new_y; self.L = new_L 
+                new_x = self.new_y.copy()
+                new_y = self.L.copy()
+                new_L = self.new_x.copy()
+            elif top == 'y':
+                new_x = self.L.copy()
+                new_y = self.new_x.copy()
+                new_L = self.new_y.copy()
+
         for p in tqdm.tqdm(self.sn.patches, disable = not self.loading_bar):
             p.trans_xyz = np.array([np.sum(coor[:, None, None, None] * p.rel_xyz, axis = 0) for coor in [self.new_x, self.new_y, self.L]])
             p.trans_vrel = np.array([np.sum(coor[:, None, None, None] * p.vrel, axis = 0) for coor in [self.new_x, self.new_y, self.L]])
@@ -393,7 +400,16 @@ class pipeline():
             proj_r = np.sum(p.cyl_r * self.new_x[:, None, None, None], axis = 0)
             proj_φ = np.sum(p.cyl_r * self.new_y[:, None, None, None], axis = 0)
             p.φ = np.arctan2(proj_φ, proj_r) + np.pi
-            
+
+        
+        for p in tqdm.tqdm(self.sn.patches, disable=not self.loading_bar):
+            p.trans_xyz = np.array([np.sum(coor[:, None, None, None] * p.rel_xyz, axis=0) for coor in [self.new_x, self.new_y, self.L]])
+            p.trans_vrel = np.array([np.sum(coor[:, None, None, None] * p.vrel, axis=0) for coor in [self.new_x, self.new_y, self.L]])
+            p.trans_ppos = np.array([np.dot(coor, p.rel_ppos) for coor in [self.new_x, self.new_y, self.L]])
+            proj_r = np.sum(p.cyl_r * self.new_x[:, None, None, None], axis=0)
+            proj_φ = np.sum(p.cyl_r * self.new_y[:, None, None, None], axis=0)
+            p.φ = np.arctan2(proj_φ, proj_r) + np.pi
+                    
 
     
 

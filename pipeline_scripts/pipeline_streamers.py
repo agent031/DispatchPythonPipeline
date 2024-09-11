@@ -15,7 +15,7 @@ from scipy import interpolate
 import warnings
 from pipeline_main import pipeline
 from pipeline_stress import _fill_2Dhist
-from scipy.optimize import fsolve
+from scipy.optimize import differential_evolution
 import healpy as hp
 
 def infall_sphere(self, shell_r=50, shell_Δpct=0.05, lon_N=360, lat_N=180, range_plot=1e-09, linear_threshold=1e-13, dpi=100, get_data=True, plot=True, verbose=1):
@@ -156,8 +156,13 @@ def accretion_pattern(self, shell_r = 50, shell_Δpct = 0.05, verbose = 1):
             covered_bool = ~np.all(((p.xyz > leaf_extent[:, 0, None, None, None]) & (p.xyz < leaf_extent[:, 1, None, None, None])), axis=0)
             to_extract *= covered_bool
 
+        
         new_xyz = p.trans_xyz[:, to_extract].T
-        new_value = (p.var('d') * np.sum((p.trans_vrel *  p.trans_xyz / np.linalg.norm(p.trans_xyz, axis=0)), axis=0))[to_extract].T
+        # WRONG # - new_value = (p.var('d') * np.sum((p.trans_vrel *  p.trans_xyz / np.linalg.norm(p.trans_xyz, axis=0)), axis=0))[to_extract].T
+        # WRONG # - #new_xyz = p.trans_xyz[:, to_extract].T
+        #### - FIXED - Only use the transformation when assigning the values to the coordinates, otherwise the orientation is flipped. ###    
+    
+        new_value = (p.var('d') * np.sum((p.vrel *  p.rel_xyz / np.linalg.norm(p.rel_xyz, axis=0)), axis=0))[to_extract].T
         patch_values.extend(new_value.tolist())
         patch_coord.extend(new_xyz.tolist())
         cell_level.extend(p.level * np.ones(len(patch_values)))
@@ -167,11 +172,12 @@ def accretion_pattern(self, shell_r = 50, shell_Δpct = 0.05, verbose = 1):
     cell_level = np.asarray(cell_level)
 
     ### Adjusting the resolution of the sphere to fit with cell level at specified radius####
-    avg_cell_level = np.rint(cell_level.mean())
-    nside = int(np.rint(fsolve(lambda x: hp.nside2resol(x) * shell_r - 0.5**avg_cell_level , 40)[0]))
-
+    res = differential_evolution(lambda x: abs(hp.nside2resol(x) * shell_r - 0.5**cell_level.mean()), bounds = [(0, 500)])
+    nside = int(np.rint(res.x))
+    
     npix = hp.nside2npix(nside); m_data = np.zeros(npix)
     pixel_indices = hp.vec2pix(nside, patch_coord[:,0], patch_coord[:,1], patch_coord[:,2])
+    #pixel_indices = hp.vec2pix(nside, patch_coord[:,1], patch_coord[:,2], patch_coord[:,0])
     index, counts = np.unique(pixel_indices, return_counts=True); 
     m = np.zeros(npix)
     m[index] = counts
@@ -189,13 +195,16 @@ def accretion_pattern(self, shell_r = 50, shell_Δpct = 0.05, verbose = 1):
     map_inter = map_clean.copy()
     all_neighbours = hp.get_all_neighbours(nside, np.where(map_inter == 0))
 
+    if verbose > 0:
+        print('Interpolating unpopulated cells...')
     for i, index in enumerate(np.where(map_inter == 0)[0]):
         non_zero_neighbours = all_neighbours[:,0,i] > 0
         map_inter[index] = np.average(map_inter[all_neighbours[:,0,i]], weights = non_zero_neighbours)
 
-    map_real = map_inter * -self.msun_mass / self.sn.cgs.yr * cell_area
+    #### The flip is added to make sure that the orientation is similar to other plots made in matplotlib ####
+    map_real = np.flip(map_inter) * -self.msun_mass / self.sn.cgs.yr * cell_area
 
-    return map_real, nside
+    return map_real, nside, cell_level
 
 pipeline.accretion_pattern = accretion_pattern
 
